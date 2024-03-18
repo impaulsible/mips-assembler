@@ -48,9 +48,13 @@ const RTYPE_FUNCTS = {
   srl: 1,
   jr: 8,
   add: 32,
+  addu: 33,
   sub: 34,
+  subu: 35,
   and: 36,
   or: 37,
+  xor: 38,
+  nor: 39,
   slt: 42,
 };
 
@@ -80,15 +84,18 @@ const MEMORY_OPCODES = {
   swl: 42,
   sw: 43,
   swr: 46,
+  ll: 48,
+  sc: 56,
 };
 
 const ITYPE_OPCODES = {
   ...BRANCH_OPCODES,
   addi: 8,
-  subi: 10,
+  addiu: 9,
+  slti: 10,
+  sltiu: 11,
   andi: 12,
   ori: 13,
-  slti: 10,
   lui: 15,
   lw: 35,
   sw: 43,
