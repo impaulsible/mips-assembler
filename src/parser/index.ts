@@ -45,7 +45,7 @@ type Context = {
 
 const RTYPE_FUNCTS = {
   sll: 0,
-  srl: 1,
+  srl: 2,
   jr: 8,
   add: 32,
   addu: 33,
