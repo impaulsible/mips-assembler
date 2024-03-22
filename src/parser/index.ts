@@ -102,6 +102,8 @@ const ITYPE_OPCODES = {
   beq: 4,
 };
 
+const PSEUDO_BRANCH_INSTRUCTIONS = ['blt', 'bgt', 'ble', 'bge', 'beqz', 'bnez'];
+
 const COMMAND_SCHEMAS = {
   RTYPE: new RegExp(
     // Matches lines like `add $t0, $t1, $t2`
@@ -114,6 +116,9 @@ const COMMAND_SCHEMAS = {
   ITYPE_MEMORY: new RegExp(
     // Matches memory instructions like `lw $t0, 10($t1)` and `sw $t0, ($t1)`
     `(${Object.keys(MEMORY_OPCODES).join('|')})\\s+\\$(\\w+),\\s*(-?\\w+)?(?:\\(\\$(\\w+)\\))?$`
+  ),
+  PSEUDO_INSTRUCTION: new RegExp(
+    `(${PSEUDO_BRANCH_INSTRUCTIONS.join('|')})\\s+\\$(\\w+),(?:\\s*\\$(\\w+),)?\\s*(-?\\w+)$`
   ),
 };
 
@@ -308,6 +313,76 @@ const parseLabel = (line: string, { address }: Context): LabelLine => {
   };
 };
 
+const parsePseudoInstruction = (line: string, context: Context) => {
+  const match = line.match(COMMAND_SCHEMAS.PSEUDO_INSTRUCTION);
+  // split the line an all whitespace characters
+  const name = line.split(/\s+/)[0];
+  const args = line
+    .substring(name.length)
+    .trim()
+    .split(',')
+    .filter((a) => a.length)
+    .map((a) => a.trim());
+
+  if (match) {
+    const [, name, first, second, immediate] = match;
+    return parseBranchPseudoInstruction(
+      { name, first, second, immediate },
+      context
+    );
+  } else if (line.startsWith('li') && args.length === 2) {
+    return [parseIType(`addiu ${args[0]}, $zero, ${args[1]}`, context)];
+  } else if (line.startsWith('move') && args.length === 2) {
+    return [parseRType(`add ${args[0]}, $zero, ${args[1]}`, context)];
+  }
+
+  return null;
+};
+
+const parseBranchPseudoInstruction = (
+  { name, first, second, immediate },
+  context: Context
+) => {
+  switch (name) {
+    case 'blt':
+      return [
+        parseRType(`slt $at, $${first}, $${second}`, context),
+        parseIType(`bne $at, $zero, ${immediate}`, {
+          ...context,
+          address: context.address + 4,
+        }),
+      ];
+    case 'bgt':
+      return [
+        parseRType(`slt $at, $${second}, $${first}`, context),
+        parseIType(`bne $at, $zero, ${immediate}`, {
+          ...context,
+          address: context.address + 4,
+        }),
+      ];
+    case 'ble':
+      return [
+        parseRType(`slt $at, $${second}, $${first}`, context),
+        parseIType(`beq $at, $zero, ${immediate}`, {
+          ...context,
+          address: context.address + 4,
+        }),
+      ];
+    case 'bge':
+      return [
+        parseRType(`slt $at, $${first}, $${second}`, context),
+        parseIType(`beq $at, $zero, ${immediate}`, {
+          ...context,
+          address: context.address + 4,
+        }),
+      ];
+    case 'beqz':
+      return [parseIType(`beq $${first}, $zero, ${immediate}`, context)];
+    case 'bnez':
+      return [parseIType(`bne $${first}, $zero, ${immediate}`, context)];
+  }
+};
+
 /// Parse a line of code
 export const parseLine = (line: string, address: Context) =>
   parseRType(line, address) ??
@@ -342,14 +417,19 @@ export const parse = (code: string, startingAddressString: string) => {
   var instructionIdx = 0;
 
   // Parse everything that isn't a label
-  return lines.map((line) => {
-    const parsed = parseLine(line, {
-      ...globalContext,
-      address: startingAddress + 4 * instructionIdx,
-    });
+  return lines
+    .map((line) => {
+      const context = {
+        ...globalContext,
+        address: startingAddress + 4 * instructionIdx,
+      };
+      const parsed = parsePseudoInstruction(line, context) ?? [
+        parseLine(line, context),
+      ];
 
-    if (!line.endsWith(':')) instructionIdx++;
+      if (parsed[0]?.type !== 'L') instructionIdx += parsed.length;
 
-    return parsed;
-  });
+      return parsed;
+    })
+    .flat();
 };
